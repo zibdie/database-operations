@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
         DOCKERHUB_USERNAME: zibdie
-        OFFICIAL_TAG: zibdie/zibdie/database-operations:latest
-        MAIN_REPO_NAME: zibdie/zibdie/database-operations
+        OFFICIAL_TAG: zibdie/database-operations:latest
+        MAIN_REPO_NAME: zibdie/database-operations
         DOCKERFILE_PATH: ./
 
     steps:
