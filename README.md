@@ -4,6 +4,11 @@ A tool that allows you to run operations on a database and export its results wi
 ## Running the Container
 You can start the container by running the `run_container.bat` (for Windows) or `run_container.sh` (for Mac/Linux). This will remove existing images and build a new one.
 
+You can also pull and examine the image from Docker Hub:
+```
+docker run -it -v "$(pwd)/databases:/databases" -p 3326:3306 zibdie/database-operations "$1"
+```
+
 ## How to Use
 
 1. Ensure you have your NodeJS script ready and included in the `process-database.js` in the area highlighted below. For reference, I created a `randomize.js` that randomizes names.
