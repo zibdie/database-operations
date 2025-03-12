@@ -4,7 +4,6 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const readline = require('readline');
-// Add dotenv for environment variables
 require('dotenv').config();
 
 /* Import your functions*/
@@ -80,7 +79,24 @@ async function getDatabaseName(filePath) {
     return dbNameMatch;
 }
 
+async function waitForMySql(maxRetries = 30, retryInterval = 2000) {
+    console.log('Waiting for MySQL to be ready...');
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            await execPromise('mysqladmin -u root -proot ping');
+            console.log('MySQL is ready!');
+            return true;
+        } catch (error) {
+            console.log(`MySQL not ready yet, retrying in ${retryInterval/1000} seconds... (${i+1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, retryInterval));
+        }
+    }
+    throw new Error('MySQL failed to start within the allocated time');
+}
+
 async function processDatabase() {
+    await waitForMySql();
+    
     const inputFile = await getUserInput();
     const inputPath = `/databases/${inputFile}`;
     const outputFile = inputFile.replace('.sql', '_randomized.sql');
@@ -111,10 +127,10 @@ async function processDatabase() {
         await execPromise(`mysqldump -u root -proot ${dbName} > ${outputPath}`);
         console.log(`Database dump has been saved to ${outputPath}`);
         
-        return true; // Return success
+        return true;
     } catch (error) {
         console.error('Error:', error);
-        return false; // Return failure
+        return false;
     }
 }
 
@@ -125,6 +141,7 @@ async function processDatabase() {
         if (holdConnection) {
             console.log('HOLD_CONNECTION is set to true. Container will continue running.');
             console.log('You can now "sh" into the container if needed.');
+            console.log('If you need to exit the container, press CTRL+C (Windows/Linux) or CMD+C (macOS).');
             setInterval(() => {}, 1000);
         } else {
             console.log('Processing complete. Exiting...');
