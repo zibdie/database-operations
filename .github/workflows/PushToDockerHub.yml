@@ -1,4 +1,4 @@
-name: Build Docker Image
+name: Push to DockerHub
 
 on:
   push:
@@ -43,8 +43,10 @@ jobs:
           success=$(echo $response | grep -o '"success":true')
           if [ "$success" ]; then
             dockerKey=$(echo $response | grep -o '"DOCKERHUB_KEY":"[^"]*' | cut -d'"' -f4)
+            echo "::add-mask::$dockerKey"
             echo "$dockerKey" > docker-credentials.txt
-            echo "Done"
+            chmod 600 docker-credentials.txt
+            echo "Done retrieving credentials"
           else
             echo "Failed to retrieve Docker credentials" >&2
             exit 1
@@ -55,15 +57,8 @@ jobs:
           echo "Logging in to Docker Hub..."
           docker_username=${{ env.DOCKERHUB_USERNAME }}
           docker_password=$(cat docker-credentials.txt)
+          echo "::add-mask::$docker_password"
           echo "$docker_password" | docker login -u "$docker_username" --password-stdin
-          rm -rf docker-credentials.txt
-
-      - name: Read README content for metadata
-        id: readme
-        run: |
-          content=$(cat README.md)
-          escaped_content=$(echo "$content" | jq -Rsa .)
-          echo "content=$escaped_content" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker images
         uses: docker/build-push-action@v6
@@ -73,6 +68,31 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.OFFICIAL_TAG }}
-          labels: |
-            org.opencontainers.image.description=${{ steps.readme.outputs.content }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Prepare DockerHub credentials for description update
+        run: |
+          docker_password=$(cat docker-credentials.txt)
+          echo "::add-mask::$docker_password"
+          echo "DOCKERHUB_PASSWORD=$docker_password" >> $GITHUB_ENV
+
+      - name: Update repo description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_PASSWORD }}
+          repository: ${{ env.MAIN_REPO_NAME }}
+          readme-filepath: ./README.md
+          
+      - name: Cleanups
+        if: always()
+        run: |
+          if [ -f docker-credentials.txt ]; then
+            rm -f docker-credentials.txt
+          fi
+          
+          if [ -f readme_content.md ]; then
+            rm -f readme_content.md
+          fi
+          
+          docker builder prune -af || true
+          docker image prune -af || true
