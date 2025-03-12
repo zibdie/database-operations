@@ -4,6 +4,8 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const readline = require('readline');
+// Add dotenv for environment variables
+require('dotenv').config();
 
 /* Import your functions*/
 const { randomizeUserNames } = require('./randomize');
@@ -108,11 +110,27 @@ async function processDatabase() {
         console.log('Exporting database...');
         await execPromise(`mysqldump -u root -proot ${dbName} > ${outputPath}`);
         console.log(`Database dump has been saved to ${outputPath}`);
-        process.exit(0);
+        
+        return true; // Return success
     } catch (error) {
         console.error('Error:', error);
-        process.exit(1);
+        return false; // Return failure
     }
 }
 
-processDatabase(); 
+(async () => {
+    const success = await processDatabase();
+    if (success) {
+        const holdConnection = process.env.HOLD_CONNECTION === 'true';
+        if (holdConnection) {
+            console.log('HOLD_CONNECTION is set to true. Container will continue running.');
+            console.log('You can now "sh" into the container if needed.');
+            setInterval(() => {}, 1000);
+        } else {
+            console.log('Processing complete. Exiting...');
+            process.exit(0);
+        }
+    } else {
+        process.exit(1);
+    }
+})(); 
