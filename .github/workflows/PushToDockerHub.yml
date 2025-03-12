@@ -57,7 +57,6 @@ jobs:
           docker_username=${{ env.DOCKERHUB_USERNAME }}
           docker_password=$(cat docker-credentials.txt)
           echo "$docker_password" | docker login -u "$docker_username" --password-stdin
-          rm -rf docker-credentials.txt
 
       - name: Read README content for metadata
         id: readme
