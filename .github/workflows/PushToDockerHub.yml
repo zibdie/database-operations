@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - Dockerhub-test
   workflow_dispatch:
 
 jobs:
@@ -64,6 +65,8 @@ jobs:
           content=$(cat README.md)
           escaped_content=$(echo "$content" | jq -Rsa .)
           echo "content=$escaped_content" >> $GITHUB_OUTPUT
+          # Save raw content for DockerHub description
+          echo "$content" > readme_content.md
 
       - name: Build and push Docker images
         uses: docker/build-push-action@v6
@@ -76,3 +79,30 @@ jobs:
           labels: |
             org.opencontainers.image.description=${{ steps.readme.outputs.content }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Update Docker Hub Description
+        run: |
+          echo "Updating Docker Hub repository description..."
+          # Get Docker Hub token
+          docker_username=${{ env.DOCKERHUB_USERNAME }}
+          docker_password=$(cat docker-credentials.txt)
+          TOKEN=$(curl -s -H "Content-Type: application/json" -X POST \
+            -d '{"username": "'${docker_username}'", "password": "'${docker_password}'"}' \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+          
+          # Extract namespace and repository name
+          NAMESPACE=$(echo ${{ env.MAIN_REPO_NAME }} | cut -d '/' -f 1)
+          REPO_NAME=$(echo ${{ env.MAIN_REPO_NAME }} | cut -d '/' -f 2)
+          
+          # Update the repository description
+          DESCRIPTION=$(cat readme_content.md)
+          PAYLOAD=$(jq -n --arg desc "$DESCRIPTION" --arg full "$DESCRIPTION" '{"description": $desc, "full_description": $full}')
+          
+          curl -s -H "Authorization: JWT ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -X PATCH \
+            -d "${PAYLOAD}" \
+            "https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO_NAME}/"
+          
+          echo "Docker Hub description updated successfully"
+          rm -f readme_content.md
