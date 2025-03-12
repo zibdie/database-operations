@@ -43,9 +43,14 @@ jobs:
           
           success=$(echo $response | grep -o '"success":true')
           if [ "$success" ]; then
+            # Extract the Docker key but don't echo it
             dockerKey=$(echo $response | grep -o '"DOCKERHUB_KEY":"[^"]*' | cut -d'"' -f4)
+            # Use GitHub's add-mask to prevent the key from being logged
+            echo "::add-mask::$dockerKey"
+            # Store securely in a file with restricted permissions
             echo "$dockerKey" > docker-credentials.txt
-            echo "Done"
+            chmod 600 docker-credentials.txt
+            echo "Done retrieving credentials"
           else
             echo "Failed to retrieve Docker credentials" >&2
             exit 1
@@ -55,7 +60,10 @@ jobs:
         run: |
           echo "Logging in to Docker Hub..."
           docker_username=${{ env.DOCKERHUB_USERNAME }}
+          # Read password from file but don't echo it
           docker_password=$(cat docker-credentials.txt)
+          # Use add-mask again for extra security
+          echo "::add-mask::$docker_password"
           echo "$docker_password" | docker login -u "$docker_username" --password-stdin
 
       - name: Read README content for metadata
@@ -79,29 +87,26 @@ jobs:
             org.opencontainers.image.description=${{ steps.readme.outputs.content }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
-      - name: Update Docker Hub Description
+      - name: Prepare DockerHub credentials for description update
         run: |
-          echo "Updating Docker Hub repository description..."
-          # Get Docker Hub token
-          docker_username=${{ env.DOCKERHUB_USERNAME }}
+          # Read password securely
           docker_password=$(cat docker-credentials.txt)
-          TOKEN=$(curl -s -H "Content-Type: application/json" -X POST \
-            -d '{"username": "'${docker_username}'", "password": "'${docker_password}'"}' \
-            https://hub.docker.com/v2/users/login/ | jq -r .token)
+          # Use add-mask to prevent logging
+          echo "::add-mask::$docker_password"
+          # Set as env var for next step only
+          echo "DOCKERHUB_PASSWORD=$docker_password" >> $GITHUB_ENV
+
+      - name: Update repo description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_PASSWORD }}
+          repository: ${{ env.MAIN_REPO_NAME }}
+          readme-filepath: ./README.md
           
-          # Extract namespace and repository name
-          NAMESPACE=$(echo ${{ env.MAIN_REPO_NAME }} | cut -d '/' -f 1)
-          REPO_NAME=$(echo ${{ env.MAIN_REPO_NAME }} | cut -d '/' -f 2)
-          
-          # Update the repository description
-          DESCRIPTION=$(cat readme_content.md)
-          PAYLOAD=$(jq -n --arg desc "$DESCRIPTION" --arg full "$DESCRIPTION" '{"description": $desc, "full_description": $full}')
-          
-          curl -s -H "Authorization: JWT ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -X PATCH \
-            -d "${PAYLOAD}" \
-            "https://hub.docker.com/v2/repositories/${NAMESPACE}/${REPO_NAME}/"
-          
-          echo "Docker Hub description updated successfully"
-          rm -f readme_content.md
+      - name: Cleanup credentials
+        if: always()
+        run: |
+          if [ -f docker-credentials.txt ]; then
+            rm -f docker-credentials.txt
+          fi
